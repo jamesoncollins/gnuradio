@@ -21,7 +21,8 @@
 namespace gr {
 namespace iio {
 
-device_sink::sptr device_sink::make(const std::string& uri,
+template <class T>
+typename device_sink<T>::sptr device_sink<T>::make(const std::string& uri,
                                     const std::string& device,
                                     const std::vector<std::string>& channels,
                                     const std::string& device_phy,
@@ -30,8 +31,8 @@ device_sink::sptr device_sink::make(const std::string& uri,
                                     unsigned int interpolation,
                                     bool cyclic)
 {
-    return gnuradio::make_block_sptr<device_sink_impl>(
-        device_source_impl::get_context(uri),
+    return gnuradio::make_block_sptr<device_sink_impl<T>>(
+        device_source_impl<T>::get_context(uri),
         true,
         device,
         channels,
@@ -42,7 +43,8 @@ device_sink::sptr device_sink::make(const std::string& uri,
         cyclic);
 }
 
-device_sink::sptr device_sink::make_from(iio_context* ctx,
+template <class T>
+typename device_sink<T>::sptr device_sink<T>::make_from(iio_context* ctx,
                                          const std::string& device,
                                          const std::vector<std::string>& channels,
                                          const std::string& device_phy,
@@ -51,7 +53,7 @@ device_sink::sptr device_sink::make_from(iio_context* ctx,
                                          unsigned int interpolation,
                                          bool cyclic)
 {
-    return gnuradio::make_block_sptr<device_sink_impl>(ctx,
+    return gnuradio::make_block_sptr<device_sink_impl<T>>(ctx,
                                                        false,
                                                        device,
                                                        channels,
@@ -62,15 +64,17 @@ device_sink::sptr device_sink::make_from(iio_context* ctx,
                                                        cyclic);
 }
 
-void device_sink_impl::set_params(const iio_param_vec_t& params)
+template <class T>
+void device_sink_impl<T>::set_params(const iio_param_vec_t& params)
 {
-    device_source_impl::set_params(this->phy, params);
+    device_source_impl<T>::set_params(this->phy, params);
 }
 
 /*
  * The private constructor
  */
-device_sink_impl::device_sink_impl(iio_context* ctx,
+template <class T>
+device_sink_impl<T>::device_sink_impl(iio_context* ctx,
                                    bool destroy_ctx,
                                    const std::string& device,
                                    const std::vector<std::string>& channels,
@@ -80,7 +84,7 @@ device_sink_impl::device_sink_impl(iio_context* ctx,
                                    unsigned int interpolation,
                                    bool cyclic)
     : gr::sync_block("device_sink",
-                     gr::io_signature::make(1, -1, sizeof(short)),
+                     gr::io_signature::make(1, -1, sizeof(T)),
                      gr::io_signature::make(0, 0, 0)),
       d_tags(0),
       ctx(ctx),
@@ -92,7 +96,7 @@ device_sink_impl::device_sink_impl(iio_context* ctx,
     unsigned int nb_channels, i;
 
     /* Set minimum input size */
-    set_output_multiple(buffer_size / (interpolation + 1));
+    this->set_output_multiple(buffer_size / (interpolation + 1));
 
     if (!ctx)
         throw std::runtime_error("Unable to create context");
@@ -145,26 +149,56 @@ device_sink_impl::device_sink_impl(iio_context* ctx,
 /*
  * Our virtual destructor.
  */
-device_sink_impl::~device_sink_impl()
+template <class T>
+device_sink_impl<T>::~device_sink_impl()
 {
     iio_buffer_destroy(buf);
-    device_source_impl::remove_ctx_history(ctx, destroy_ctx);
+    device_source_impl<T>::remove_ctx_history(ctx, destroy_ctx);
 }
 
-void device_sink_impl::channel_write(const iio_channel* chn, const void* src, size_t len)
+template <>
+void device_sink_impl<float>::channel_write(const iio_channel* chn, const float* src, size_t len)
 {
-    uintptr_t dst_ptr, src_ptr = (uintptr_t)src, end = src_ptr + len;
-    unsigned int length = iio_channel_get_data_format(chn)->length / 8;
+    uintptr_t dst_ptr;
+    unsigned int length = (iio_channel_get_data_format(chn)->length + 7) / 8;
     uintptr_t buf_end = (uintptr_t)iio_buffer_end(buf);
     ptrdiff_t buf_step = iio_buffer_step(buf) * (interpolation + 1);
 
+    long tmpbuf;
+    long max_val = (1 << ((length * 8) - 1)) - 1; // max signed value for underlying size
+
+    size_t i = 0;
     for (dst_ptr = (uintptr_t)iio_buffer_first(buf, chn);
-         dst_ptr < buf_end && src_ptr + length <= end;
-         dst_ptr += buf_step, src_ptr += length)
-        iio_channel_convert_inverse(chn, (void*)dst_ptr, (const void*)src_ptr);
+         dst_ptr < buf_end && i < len;
+         dst_ptr += buf_step, i++) {
+        
+        tmpbuf = (long)(src[i] * max_val);
+        iio_channel_convert_inverse(chn, (void*)dst_ptr, (const void*)&tmpbuf);
+    }
 }
 
-void device_sink_impl::set_len_tag_key(const std::string& len_tag_key)
+template <class T>
+void device_sink_impl<T>::channel_write(const iio_channel* chn, const T* src, size_t len)
+{
+    uintptr_t dst_ptr;
+    unsigned int length = (iio_channel_get_data_format(chn)->length + 7) / 8;
+    uintptr_t buf_end = (uintptr_t)iio_buffer_end(buf);
+    ptrdiff_t buf_step = iio_buffer_step(buf) * (interpolation + 1);
+
+    // additional checks are needed if not automatically converted to float
+    if (length != sizeof(T))
+        throw std::runtime_error("Sample size doesn't match chosen output type!\n");
+
+    size_t i = 0;
+    for (dst_ptr = (uintptr_t)iio_buffer_first(buf, chn);
+         dst_ptr < buf_end && i < len;
+         dst_ptr += buf_step, i++) {
+        iio_channel_convert_inverse(chn, (void*)dst_ptr, (const void*)&src[i]);
+    }
+}
+
+template <class T>
+void device_sink_impl<T>::set_len_tag_key(const std::string& len_tag_key)
 {
     if (!len_tag_key.size()) {
         d_len_tag_key = pmt::PMT_NIL;
@@ -173,7 +207,8 @@ void device_sink_impl::set_len_tag_key(const std::string& len_tag_key)
     }
 }
 
-int device_sink_impl::work(int noutput_items,
+template <class T>
+int device_sink_impl<T>::work(int noutput_items,
                            gr_vector_const_void_star& input_items,
                            gr_vector_void_star& output_items)
 {
@@ -188,8 +223,8 @@ int device_sink_impl::work(int noutput_items,
             ninputs = input_items.size();
 
         for (size_t i = 0; i < ninputs; i++) {
-            auto items_read = nitems_read(i);
-            get_tags_in_range(d_tags, i, items_read, items_read + 1, d_len_tag_key);
+            auto items_read = this->nitems_read(i);
+            this->get_tags_in_range(d_tags, i, items_read, items_read + 1, d_len_tag_key);
 
             if (d_tags.size() < 1) {
                 throw std::runtime_error("device_sink: Input stream not tagged! Either "
@@ -215,7 +250,7 @@ int device_sink_impl::work(int noutput_items,
     }
 
     for (unsigned int i = 0; i < input_items.size(); i++)
-        channel_write(channel_list[i], input_items[i], noutput_items * sizeof(short));
+        channel_write(channel_list[i], (T *)input_items[i], noutput_items);
 
     ret = iio_buffer_push(buf);
     if (ret < 0) {
@@ -223,19 +258,37 @@ int device_sink_impl::work(int noutput_items,
         iio_strerror(-ret, buf, sizeof(buf));
         std::string error(buf);
 
-        d_logger->warn("Unable to push buffer: {:s}", error);
-        return WORK_DONE; /* EOF */
+        this->d_logger->warn("Unable to push buffer: {:s}", error);
+        return this->WORK_DONE; /* EOF */ // where does this come from???
     }
 
-    consume_each(buffer_size / (interpolation + 1));
+    this->consume_each(buffer_size / (interpolation + 1));
     return 0;
 }
 
-void device_sink_impl::forecast(int noutput_items, gr_vector_int& ninput_items_required)
+template <class T>
+void device_sink_impl<T>::forecast(int noutput_items, gr_vector_int& ninput_items_required)
 {
     for (unsigned int i = 0; i < ninput_items_required.size(); i++)
         ninput_items_required[i] = noutput_items;
 }
+
+template class device_sink<std::int8_t>;
+template class device_sink_impl<std::int8_t>;
+
+template class device_sink<std::int16_t>;
+template class device_sink_impl<std::int16_t>;
+
+template class device_sink<std::int32_t>;
+template class device_sink_impl<std::int32_t>;
+
+template class device_sink<float>;
+template class device_sink_impl<float>;
+
+template class device_sink<std::complex<std::int16_t>>;
+template class device_sink_impl<std::complex<std::int16_t>>;
+template class device_sink<gr_complex>;
+template class device_sink_impl<gr_complex>;
 
 } /* namespace iio */
 } /* namespace gr */

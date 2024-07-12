@@ -35,7 +35,7 @@ typename fmcomms2_sink<T>::sptr fmcomms2_sink<T>::make(const std::string& uri,
                                                        bool cyclic)
 {
     return gnuradio::make_block_sptr<fmcomms2_sink_impl<T>>(
-        device_source_impl::get_context(uri), ch_en, buffer_size, cyclic);
+        device_source_impl<T>::get_context(uri), ch_en, buffer_size, cyclic);
 }
 
 template <typename T>
@@ -80,7 +80,7 @@ fmcomms2_sink_impl<int16_t>::fmcomms2_sink_impl(iio_context* ctx,
     : gr::sync_block("fmcomms2_sink",
                      gr::io_signature::make(1, -1, sizeof(int16_t)),
                      gr::io_signature::make(0, 0, 0)),
-      device_sink_impl(ctx,
+      device_sink_impl<int16_t>(ctx,
                        true,
                        "cf-ad9361-dds-core-lpc",
                        get_channels_vector(ch_en),
@@ -103,7 +103,7 @@ fmcomms2_sink_impl<T>::fmcomms2_sink_impl(iio_context* ctx,
     : gr::sync_block("fmcomms2_sink",
                      gr::io_signature::make(1, -1, sizeof(T)),
                      gr::io_signature::make(0, 0, 0)),
-      device_sink_impl(ctx,
+      device_sink_impl<T>(ctx,
                        true,
                        "cf-ad9361-dds-core-lpc",
                        get_channels_vector(ch_en),
@@ -128,7 +128,7 @@ fmcomms2_sink_impl<T>::fmcomms2_sink_impl(iio_context* ctx,
     d_float_i.resize(s_initial_device_buf_size);
 
     // Tell tagger in device_sink_impl::work that we are using a less inputs
-    override_tagged_input_channels = d_device_bufs.size() / 2;
+    this->override_tagged_input_channels = d_device_bufs.size() / 2;
 }
 
 template <typename T>
@@ -143,7 +143,7 @@ fmcomms2_sink_impl<T>::~fmcomms2_sink_impl()
 template <typename T>
 void fmcomms2_sink_impl<T>::set_len_tag_key(const std::string& str)
 {
-    device_sink_impl::set_len_tag_key(str);
+    device_sink_impl<T>::set_len_tag_key(str);
 }
 
 template <typename T>
@@ -154,17 +154,17 @@ void fmcomms2_sink_impl<T>::check_underflow(void)
     std::unique_lock<std::mutex> lock(uf_mutex, std::defer_lock);
 
     // Clear status registers
-    iio_device_reg_write(dev, 0x80000088, 0x6);
+    iio_device_reg_write(this->dev, 0x80000088, 0x6);
 
     for (;;) {
-        ret = iio_device_reg_read(dev, 0x80000088, &status);
+        ret = iio_device_reg_read(this->dev, 0x80000088, &status);
         if (ret) {
             throw std::runtime_error("Failed to read underflow status register");
         }
         if (status & 1) {
             printf("U");
             // Clear status registers
-            iio_device_reg_write(dev, 0x80000088, 1);
+            iio_device_reg_write(this->dev, 0x80000088, 1);
         }
 #ifdef _WIN32
         Sleep(OVERFLOW_CHECK_PERIOD_MS);
@@ -183,7 +183,7 @@ void fmcomms2_sink_impl<T>::set_bandwidth(unsigned long bandwidth)
 {
     iio_param_vec_t params;
     params.emplace_back("out_voltage_rf_bandwidth", bandwidth);
-    device_source_impl::set_params(this->phy, params);
+    device_source_impl<T>::set_params(this->phy, params);
     d_bandwidth = bandwidth;
 }
 
@@ -192,7 +192,7 @@ void fmcomms2_sink_impl<T>::set_rf_port_select(const std::string& rf_port_select
 {
     iio_param_vec_t params;
     params.emplace_back("out_voltage0_rf_port_select", rf_port_select);
-    device_source_impl::set_params(this->phy, params);
+    device_source_impl<T>::set_params(this->phy, params);
     d_rf_port_select = rf_port_select;
 }
 
@@ -202,7 +202,7 @@ void fmcomms2_sink_impl<T>::set_frequency(double frequency)
     iio_param_vec_t params;
     params.emplace_back("out_altvoltage1_TX_LO_frequency",
                         static_cast<unsigned long long>(frequency));
-    device_source_impl::set_params(this->phy, params);
+    device_source_impl<T>::set_params(this->phy, params);
     d_frequency = frequency;
 }
 
@@ -213,17 +213,17 @@ void fmcomms2_sink_impl<T>::set_samplerate(unsigned long samplerate)
     if (samplerate < MIN_RATE) {
         int ret;
         samplerate = samplerate * DECINT_RATIO;
-        ret = device_source_impl::handle_decimation_interpolation(
-            samplerate, "voltage0", "sampling_frequency", dev, false, true);
+        ret = device_source_impl<T>::handle_decimation_interpolation(
+            samplerate, "voltage0", "sampling_frequency", this->dev, false, true);
         if (ret < 0)
             samplerate = samplerate / 8;
     } else // Disable decimation filter if on
     {
-        device_source_impl::handle_decimation_interpolation(
-            samplerate, "voltage0", "sampling_frequency", dev, true, true);
+        device_source_impl<T>::handle_decimation_interpolation(
+            samplerate, "voltage0", "sampling_frequency", this->dev, true, true);
     }
 
-    device_source_impl::set_params(this->phy, params);
+    device_source_impl<T>::set_params(this->phy, params);
     d_samplerate = samplerate;
     update_dependent_params();
 }
@@ -231,14 +231,14 @@ void fmcomms2_sink_impl<T>::set_samplerate(unsigned long samplerate)
 template <typename T>
 void fmcomms2_sink_impl<T>::set_attenuation(size_t chan, double attenuation)
 {
-    bool is_fmcomms4 = !iio_device_find_channel(phy, "voltage1", false);
+    bool is_fmcomms4 = !iio_device_find_channel(this->phy, "voltage1", false);
     if ((is_fmcomms4 && chan > 0) || chan > 1) {
         throw std::runtime_error("Channel out of range for this device");
     }
     iio_param_vec_t params;
     params.emplace_back("out_voltage" + std::to_string(chan) + "_hardwaregain",
                         -attenuation);
-    device_source_impl::set_params(this->phy, params);
+    device_source_impl<T>::set_params(this->phy, params);
 
     d_attenuation[chan] = attenuation;
 }
@@ -252,28 +252,28 @@ void fmcomms2_sink_impl<T>::update_dependent_params()
         params.emplace_back("out_voltage_sampling_frequency", d_samplerate);
         params.emplace_back("out_voltage_rf_bandwidth", d_bandwidth);
     } else if (d_filter_source.compare("Auto") == 0) {
-        int ret = ad9361_set_bb_rate(phy, d_samplerate);
+        int ret = ad9361_set_bb_rate(this->phy, d_samplerate);
         if (ret) {
             throw std::runtime_error("Unable to set BB rate");
             params.emplace_back("out_voltage_rf_bandwidth", d_bandwidth);
         }
     } else if (d_filter_source.compare("File") == 0) {
         std::string filt(d_filter_filename);
-        if (!device_source_impl::load_fir_filter(filt, phy))
+        if (!device_source_impl<T>::load_fir_filter(filt, this->phy))
             throw std::runtime_error("Unable to load filter file");
     } else if (d_filter_source.compare("Design") == 0) {
         int ret = ad9361_set_bb_rate_custom_filter_manual(
-            phy, d_samplerate, d_fpass, d_fstop, d_bandwidth, d_bandwidth);
+            this->phy, d_samplerate, d_fpass, d_fstop, d_bandwidth, d_bandwidth);
         if (ret) {
             throw std::runtime_error("Unable to set BB rate");
         }
     } else
         throw std::runtime_error("Unknown filter configuration");
 
-    device_source_impl::set_params(this->phy, params);
+    device_source_impl<T>::set_params(this->phy, params);
     // Filters can only be disabled after the sample rate has been set
     if (d_filter_source.compare("Off") == 0) {
-        int ret = ad9361_set_trx_fir_enable(phy, false);
+        int ret = ad9361_set_trx_fir_enable(this->phy, false);
         if (ret) {
             throw std::runtime_error("Unable to disable filters");
         }
@@ -321,7 +321,7 @@ int fmcomms2_sink_impl<std::int16_t>::work(int noutput_items,
                                       noutput_items);
     }
 
-    int ret = device_sink_impl::work(noutput_items, d_device_item_ptrs, output_items);
+    int ret = device_sink_impl<std::int16_t>::work(noutput_items, d_device_item_ptrs, output_items);
     if (ret < 0 || !cyclic)
         return ret;
     else
@@ -363,7 +363,7 @@ int fmcomms2_sink_impl<gr_complex>::work(int noutput_items,
     }
 
 
-    int ret = device_sink_impl::work(noutput_items, d_device_item_ptrs, output_items);
+    int ret = device_sink_impl<gr_complex>::work(noutput_items, d_device_item_ptrs, output_items);
     if (ret < 0 || !cyclic)
         return ret;
     else
@@ -375,11 +375,11 @@ int fmcomms2_sink_impl<T>::work(int noutput_items,
                                 gr_vector_const_void_star& input_items,
                                 gr_vector_void_star& output_items)
 {
-    int ret = device_sink_impl::work(noutput_items, input_items, output_items);
+    int ret = device_sink_impl<T>::work(noutput_items, input_items, output_items);
     if (ret < 0 || !cyclic)
         return ret;
     else
-        return WORK_DONE;
+        return this->WORK_DONE;
 }
 
 template class fmcomms2_sink<int16_t>;

@@ -3,6 +3,15 @@ label: IIO Device Sink
 flags: [ python, throttle ]
 
 parameters:
+-   id: type
+    label: Input Type
+    dtype: enum
+    options: [float, byte, short, int]
+    option_labels: [Convert (float), byte, short, int]
+    option_attributes:
+        fcn: [f, b, s, i]
+        offset_type: [float, byte, short, int]
+
 -   id: uri
     label: IIO context URI
     dtype: string
@@ -50,7 +59,7 @@ parameters:
 
 inputs:
 -   domain: stream
-    dtype: short
+    dtype: ${ type }
     multiplicity: ${ len(channels) }
 
 asserts:
@@ -59,7 +68,7 @@ asserts:
 templates:
   imports: from gnuradio import iio
   make: |
-    iio.device_sink(${uri}, ${device}, ${channels}, ${device_phy}, ${params}, ${buffer_size}, ${interpolation} - 1, ${cyclic})
+    iio.device_sink_${type.fcn}(${uri}, ${device}, ${channels}, ${device_phy}, ${params}, ${buffer_size}, ${interpolation} - 1, ${cyclic})
     self.${id}.set_len_tag_key(${len_tag_key})
 
 file_format: 1

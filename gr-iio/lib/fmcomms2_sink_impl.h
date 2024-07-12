@@ -24,7 +24,7 @@ namespace gr {
 namespace iio {
 
 template <class T>
-class fmcomms2_sink_impl : public fmcomms2_sink<T>, public device_sink_impl
+class fmcomms2_sink_impl : public fmcomms2_sink<T>, public device_sink_impl<T>
 {
 private:
     bool cyclic, stop_thread;

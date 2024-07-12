@@ -51,7 +51,7 @@ dds_control_impl::dds_control_impl(const std::string& uri,
     unsigned int ku = 0, count = 0;
     iio_channel* chan;
 
-    d_ctx = device_source_impl::get_context(uri);
+    d_ctx = device_source_impl<float>::get_context(uri);
     if (!d_ctx)
         throw std::runtime_error("Unable to create context");
 

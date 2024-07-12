@@ -23,7 +23,8 @@
 namespace gr {
 namespace iio {
 
-device_source::sptr device_source::make(const std::string& uri,
+template <class T>
+typename device_source<T>::sptr device_source<T>::make(const std::string& uri,
                                         const std::string& device,
                                         const std::vector<std::string>& channels,
                                         const std::string& device_phy,
@@ -31,8 +32,8 @@ device_source::sptr device_source::make(const std::string& uri,
                                         unsigned int buffer_size,
                                         unsigned int decimation)
 {
-    return gnuradio::make_block_sptr<device_source_impl>(
-        device_source_impl::get_context(uri),
+    return gnuradio::make_block_sptr<device_source_impl<T>>(
+        device_source_impl<T>::get_context(uri),
         true,
         device,
         channels,
@@ -42,7 +43,9 @@ device_source::sptr device_source::make(const std::string& uri,
         decimation);
 }
 
-device_source::sptr device_source::make_from(iio_context* ctx,
+
+template <class T>
+typename device_source<T>::sptr device_source<T>::make_from(iio_context* ctx,
                                              const std::string& device,
                                              const std::vector<std::string>& channels,
                                              const std::string& device_phy,
@@ -50,11 +53,13 @@ device_source::sptr device_source::make_from(iio_context* ctx,
                                              unsigned int buffer_size,
                                              unsigned int decimation)
 {
-    return gnuradio::make_block_sptr<device_source_impl>(
+    return gnuradio::make_block_sptr<device_source_impl<T>>(
         ctx, false, device, channels, device_phy, params, buffer_size, decimation);
 }
 
-void device_source_impl::set_params(iio_device* phy, const iio_param_vec_t& params)
+
+template <class T>
+void device_source_impl<T>::set_params(iio_device* phy, const iio_param_vec_t& params)
 {
     static gr::logger logger("device_source_impl::set_params");
 
@@ -85,12 +90,14 @@ void device_source_impl::set_params(iio_device* phy, const iio_param_vec_t& para
     }
 }
 
-void device_source_impl::set_params(const iio_param_vec_t& params)
+template <class T>
+void device_source_impl<T>::set_params(const iio_param_vec_t& params)
 {
     set_params(this->phy, params);
 }
 
-void device_source_impl::set_len_tag_key(const std::string& len_tag_key)
+template <class T>
+void device_source_impl<T>::set_len_tag_key(const std::string& len_tag_key)
 {
     if (!len_tag_key.size()) {
         d_len_tag_key = pmt::PMT_NIL;
@@ -99,7 +106,8 @@ void device_source_impl::set_len_tag_key(const std::string& len_tag_key)
     }
 }
 
-void device_source_impl::set_buffer_size(unsigned int _buffer_size)
+template <class T>
+void device_source_impl<T>::set_buffer_size(unsigned int _buffer_size)
 {
     std::unique_lock<std::mutex> lock(iio_mutex);
 
@@ -114,12 +122,14 @@ void device_source_impl::set_buffer_size(unsigned int _buffer_size)
     this->buffer_size = _buffer_size;
 }
 
-void device_source_impl::set_timeout_ms(unsigned long _timeout)
+template <class T>
+void device_source_impl<T>::set_timeout_ms(unsigned long _timeout)
 {
     this->timeout = _timeout;
 }
 
-iio_context* device_source_impl::get_context(const std::string& uri)
+template <class T>
+iio_context* device_source_impl<T>::get_context(const std::string& uri)
 {
     iio_context* ctx;
 
@@ -152,10 +162,12 @@ iio_context* device_source_impl::get_context(const std::string& uri)
     return ctx;
 }
 
+
 /*
  * The private constructor
  */
-device_source_impl::device_source_impl(iio_context* ctx,
+template <class T>
+device_source_impl<T>::device_source_impl(iio_context* ctx,
                                        bool destroy_ctx,
                                        const std::string& device,
                                        const std::vector<std::string>& channels,
@@ -165,7 +177,7 @@ device_source_impl::device_source_impl(iio_context* ctx,
                                        unsigned int decimation)
     : gr::sync_block("device_source",
                      gr::io_signature::make(0, 0, 0),
-                     gr::io_signature::make(1, -1, sizeof(short))),
+                     gr::io_signature::make(1, -1, sizeof(T))),
       port_id(pmt::mp("msg")),
       timeout(100),
       d_len_tag_key(pmt::PMT_NIL),
@@ -218,12 +230,13 @@ device_source_impl::device_source_impl(iio_context* ctx,
     }
 
     set_params(params);
-    set_output_multiple(0x400);
-
-    message_port_register_out(port_id);
+    
+    this->set_output_multiple(0x400);
+    this->message_port_register_out(port_id);
 }
 
-void device_source_impl::remove_ctx_history(iio_context* ctx_from_block, bool destroy_ctx)
+template <class T>
+void device_source_impl<T>::remove_ctx_history(iio_context* ctx_from_block, bool destroy_ctx)
 {
     std::lock_guard<std::mutex> lock(ctx_mutex);
 
@@ -240,31 +253,92 @@ void device_source_impl::remove_ctx_history(iio_context* ctx_from_block, bool de
     }
 }
 
-
 /*
  * Our virtual destructor.
  */
-device_source_impl::~device_source_impl()
+template <class T>
+device_source_impl<T>::~device_source_impl()
 {
     // Make sure this is the last open block with a given context
     // before removing the context
     remove_ctx_history(ctx, destroy_ctx);
 }
 
-void device_source_impl::channel_read(const iio_channel* chn, void* dst, size_t len)
+template <class T>
+float device_source_impl<T>::cast_data_type_byte(long tmpbuf)
 {
-    uintptr_t src_ptr, dst_ptr = (uintptr_t)dst, end = dst_ptr + len;
-    unsigned int length = iio_channel_get_data_format(chn)->length / 8;
+    return (float)(*(int8_t *)&tmpbuf);
+}
+
+template <class T>
+float device_source_impl<T>::cast_data_type_short(long tmpbuf)
+{
+    return (float)(*(int16_t *)&tmpbuf);
+}
+
+template <class T>
+float device_source_impl<T>::cast_data_type_int(long tmpbuf)
+{
+    return (float)(*(int32_t *)&tmpbuf);
+}
+
+template <>
+void device_source_impl<float>::channel_read(const iio_channel* chn, float* dst, size_t len)
+{
+    uintptr_t src_ptr;
+    unsigned int length = (iio_channel_get_data_format(chn)->length + 7) / 8;
+    uintptr_t buf_end = (uintptr_t)iio_buffer_end(buf);
+    ptrdiff_t buf_step = iio_buffer_step(buf) * (decimation + 1);
+    bool is_signed = iio_channel_get_data_format(chn)->is_signed;    
+
+    float (device_source_impl<float>::*float_cast)(long); 
+
+    if (length == 1) 
+        float_cast = &device_source_impl<float>::cast_data_type_byte;
+    else if (length == 2) 
+        float_cast = &device_source_impl<float>::cast_data_type_short;
+    else if (length == 4)
+        float_cast = &device_source_impl<float>::cast_data_type_int;
+    else
+        throw std::runtime_error("Sample size greater than 32 bits!\n");
+
+    long tmpbuf;
+    long max_val = (1 << ((length * 8) - 1)) - 1; // max signed value for underlying size
+
+    size_t i = 0;
+    for (src_ptr = (uintptr_t)iio_buffer_first(buf, chn) + byte_offset;
+         src_ptr < buf_end && i < len;
+         src_ptr += buf_step, i++) {
+
+        iio_channel_convert(chn, (void*)&tmpbuf, (const void*)src_ptr);
+
+        dst[i] = ((this->*float_cast)(tmpbuf)) / max_val;
+    }
+}
+
+template <class T>
+void device_source_impl<T>::channel_read(const iio_channel* chn, T* dst, size_t len)
+{
+    uintptr_t src_ptr;
+    unsigned int length = (iio_channel_get_data_format(chn)->length + 7) / 8;
     uintptr_t buf_end = (uintptr_t)iio_buffer_end(buf);
     ptrdiff_t buf_step = iio_buffer_step(buf) * (decimation + 1);
 
+    // additional checks are needed if not automatically converted to float
+    if (length != sizeof(T))
+        throw std::runtime_error("Sample size doesn't match chosen output type!\n");
+
+    T tmpbuf;
+    size_t i = 0;
     for (src_ptr = (uintptr_t)iio_buffer_first(buf, chn) + byte_offset;
-         src_ptr < buf_end && dst_ptr + length <= end;
-         src_ptr += buf_step, dst_ptr += length)
-        iio_channel_convert(chn, (void*)dst_ptr, (const void*)src_ptr);
+         src_ptr < buf_end && i < len;
+         src_ptr += buf_step, i++) {
+        iio_channel_convert(chn, (void*)&dst[i], (const void*)src_ptr);
+    }
 }
 
-int device_source_impl::work(int noutput_items,
+template <class T>
+int device_source_impl<T>::work(int noutput_items,
                              gr_vector_const_void_star& input_items,
                              gr_vector_void_star& output_items)
 {
@@ -279,7 +353,7 @@ int device_source_impl::work(int noutput_items,
 
                 char buf[256];
                 iio_strerror(-ret, buf, sizeof(buf));
-                d_logger->warn("Unable to refill buffer: {:s}", buf);
+                this->d_logger->warn("Unable to refill buffer: {:s}", buf);
             }
             return -1;
         }
@@ -311,7 +385,7 @@ int device_source_impl::work(int noutput_items,
     unsigned long items = std::min(items_in_buffer, (unsigned long)noutput_items);
 
     for (size_t i = 0; i < output_items.size(); i++)
-        channel_read(channel_list[i], output_items[i], items * sizeof(short));
+        channel_read(channel_list[i], (T *)output_items[i], items);
 
     items_in_buffer -= items;
     byte_offset += items * iio_buffer_step(buf);
@@ -319,7 +393,8 @@ int device_source_impl::work(int noutput_items,
     return (int)items;
 }
 
-bool device_source_impl::start()
+template <class T>
+bool device_source_impl<T>::start()
 {
     items_in_buffer = 0;
     byte_offset = 0;
@@ -333,7 +408,8 @@ bool device_source_impl::start()
     return !!buf;
 }
 
-bool device_source_impl::stop()
+template <class T>
+bool device_source_impl<T>::stop()
 {
     thread_stopped = true;
 
@@ -348,7 +424,8 @@ bool device_source_impl::stop()
     return true;
 }
 
-bool device_source_impl::load_fir_filter(std::string& filter, iio_device* phy)
+template <class T>
+bool device_source_impl<T>::load_fir_filter(std::string& filter, iio_device* phy)
 {
     if (filter.empty() || !iio_device_find_attr(phy, "filter_fir_config"))
         return false;
@@ -385,7 +462,8 @@ bool device_source_impl::load_fir_filter(std::string& filter, iio_device* phy)
     return ret > 0;
 }
 
-int device_source_impl::handle_decimation_interpolation(unsigned long samplerate,
+template <class T>
+int device_source_impl<T>::handle_decimation_interpolation(unsigned long samplerate,
                                                         const char* channel_name,
                                                         const char* attr_name,
                                                         iio_device* dev,
@@ -423,6 +501,27 @@ int device_source_impl::handle_decimation_interpolation(unsigned long samplerate
 
     return ret;
 }
+
+template class device_source<std::int8_t>;
+template class device_source_impl<std::int8_t>;
+
+template class device_source<std::int16_t>;
+template class device_source_impl<std::int16_t>;
+
+template class device_source<std::int32_t>;
+template class device_source_impl<std::int32_t>;
+
+template class device_source<float>;
+template class device_source_impl<float>;
+
+template class device_source<std::complex<std::int16_t>>;
+template class device_source_impl<std::complex<std::int16_t>>;
+template class device_source<gr_complex>;
+template class device_source_impl<gr_complex>;
+// ^^
+// needed for compatibility with fmcomms2
+
+
 
 } /* namespace iio */
 } /* namespace gr */

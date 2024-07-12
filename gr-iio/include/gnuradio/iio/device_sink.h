@@ -34,10 +34,11 @@ namespace iio {
  * This block allows for streaming data to any IIO driver which has input
  * scan elements or buffered channels.
  */
+template <class T>
 class IIO_API device_sink : virtual public gr::sync_block
 {
 public:
-    typedef std::shared_ptr<device_sink> sptr;
+    typedef std::shared_ptr<device_sink<T>> sptr;
 
     /*!
      * \brief Return a shared_ptr to a new instance of iio::device.
@@ -87,6 +88,11 @@ public:
      */
     virtual void set_len_tag_key(const std::string& len_tag_key) = 0;
 };
+
+typedef device_sink<std::int8_t> device_sink_b;
+typedef device_sink<std::int16_t> device_sink_s;
+typedef device_sink<std::int32_t> device_sink_i;
+typedef device_sink<float> device_sink_f;
 
 } // namespace iio
 } // namespace gr

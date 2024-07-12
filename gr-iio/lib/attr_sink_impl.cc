@@ -45,7 +45,7 @@ attr_sink_impl::attr_sink_impl(const std::string& uri,
       type(type)
 {
 
-    ctx = device_source_impl::get_context(uri);
+    ctx = device_source_impl<float>::get_context(uri);
     if (!ctx)
         throw std::runtime_error("Unable to create context");
 

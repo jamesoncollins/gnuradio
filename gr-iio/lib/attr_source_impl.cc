@@ -98,7 +98,7 @@ attr_source_impl::attr_source_impl(const std::string& uri,
       data_type(data_type),
       address(address)
 {
-    ctx = device_source_impl::get_context(uri);
+    ctx = device_source_impl<float>::get_context(uri);
     if (!ctx)
         throw std::runtime_error("Unable to create context");
 

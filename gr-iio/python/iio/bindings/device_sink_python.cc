@@ -14,7 +14,7 @@
 /* BINDTOOL_GEN_AUTOMATIC(0)                                                       */
 /* BINDTOOL_USE_PYGCCXML(0)                                                        */
 /* BINDTOOL_HEADER_FILE(device_sink.h)                                             */
-/* BINDTOOL_HEADER_FILE_HASH(0ea102fb1e1158dd3d98e1ed56f3861e)                     */
+/* BINDTOOL_HEADER_FILE_HASH(bccad1829630cb58a78937f4ac5b9704)                     */
 /***********************************************************************************/
 
 #include <pybind11/complex.h>
@@ -27,17 +27,18 @@ namespace py = pybind11;
 // pydoc.h is automatically generated in the build directory
 #include <device_sink_pydoc.h>
 
-void bind_device_sink(py::module& m)
+template <typename T>
+void bind_device_sink_template(py::module& m, const char *classname)
 {
 
-    using device_sink = gr::iio::device_sink;
+    using device_sink = gr::iio::device_sink<T>;
 
 
     py::class_<device_sink,
                gr::sync_block,
                gr::block,
                gr::basic_block,
-               std::shared_ptr<device_sink>>(m, "device_sink", D(device_sink))
+               std::shared_ptr<device_sink>>(m, classname, D(device_sink))
 
         .def(py::init(&device_sink::make),
              py::arg("uri"),
@@ -57,3 +58,13 @@ void bind_device_sink(py::module& m)
 
         ;
 }
+
+void bind_device_sink(py::module& m)
+{
+     bind_device_sink_template<std::int8_t>(m, "device_sink_b");
+     bind_device_sink_template<std::int16_t>(m, "device_sink_s");
+     bind_device_sink_template<std::int32_t>(m, "device_sink_i");
+     bind_device_sink_template<float>(m, "device_sink_f");
+}
+
+

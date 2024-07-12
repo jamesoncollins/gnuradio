@@ -23,7 +23,7 @@ namespace gr {
 namespace iio {
 
 template <typename T>
-class fmcomms2_source_impl : public fmcomms2_source<T>, public device_source_impl
+class fmcomms2_source_impl : public fmcomms2_source<T>, public device_source_impl<T>
 {
 private:
     std::vector<std::string>

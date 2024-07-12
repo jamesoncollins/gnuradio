@@ -19,10 +19,11 @@
 namespace gr {
 namespace iio {
 
-class device_sink_impl : public device_sink
+template <class T>
+class device_sink_impl : public device_sink<T>
 {
 private:
-    void channel_write(const iio_channel* chn, const void* src, size_t len);
+    void channel_write(const iio_channel* chn, const T* src, size_t len);
     std::vector<tag_t> d_tags;
 
 protected:

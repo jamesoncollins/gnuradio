@@ -33,10 +33,11 @@ namespace iio {
  * This block allows for streaming data from any IIO driver which has output
  * scan elements or buffered channels.
  */
+template <class T>
 class IIO_API device_source : virtual public gr::sync_block
 {
 public:
-    typedef std::shared_ptr<device_source> sptr;
+    typedef std::shared_ptr<device_source<T>> sptr;
 
     /*!
      * \brief Return a shared_ptr to a new instance of iio::device.
@@ -82,6 +83,11 @@ public:
 
     virtual void set_timeout_ms(unsigned long timeout) = 0;
 };
+
+typedef device_source<std::int8_t> device_source_b;
+typedef device_source<std::int16_t> device_source_s;
+typedef device_source<std::int32_t> device_source_i;
+typedef device_source<float> device_source_f;
 
 } // namespace iio
 } // namespace gr
